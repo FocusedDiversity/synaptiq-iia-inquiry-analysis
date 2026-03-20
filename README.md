@@ -55,7 +55,7 @@ Each run creates 5 files in the output directory:
 
 ```bash
 # Basic usage — just company name and inquiry text
-python tailor_bio.py -c "Chick-fil-A" -q "Seeking AI workforce planning guidance..."
+python tailor_bio.py -c "Acme Corp" -q "Seeking AI workforce planning guidance..."
 
 # Inquiry from a file
 python tailor_bio.py -c "Acme Corp" -q inquiry.txt
