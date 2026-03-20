@@ -1,27 +1,6 @@
-# Synaptiq Inquiry Analysis CLI
+# Synaptiq IIA Inquiry Analysis Tools
 
-Batch-scores IIA prospect inquiries for Synaptiq fit using the Claude API. Replaces the manual copy-paste-into-LLM workflow that broke at 523 rows.
-
-## What It Does
-
-1. **Loads** the input CSV and three reference docs (scoring prompt, company profile, IIA comparison)
-2. **Partitions** rows into active, closed, and trivial buckets
-3. **Pre-scores** trivial rows locally (cancelled/empty description) — no API call
-4. **Batch-scores** active rows via Claude with full Fit/Urgency methodology
-5. **Batch-scores** closed rows with Urgency fixed at 1 (lighter pass, larger batches)
-6. **Caches** results in SQLite keyed by Case Number + description hash
-7. **Outputs** a prioritized CSV and a summary markdown with Top Opportunities, Quick Wins, Distinct Capability Matches, and IIA Referral Candidates
-
-### Cost Optimization
-
-| Partition | Rows | Batch Size | API Calls | Notes |
-|-----------|------|------------|-----------|-------|
-| Trivial (cancelled/empty) | ~23 | — | 0 | Pre-scored locally |
-| Active (Closed=0) | ~66 | 25 | ~3 | Full Fit + Urgency scoring |
-| Closed (Closed=1) | ~434 | 50 | ~9 | Urgency fixed at 1 |
-| **Total** | **523** | — | **~12** | ~$2 full run |
-
-Use `--skip-closed` to score only active rows (~$0.33, ~3 API calls).
+Two CLI tools for processing IIA prospect inquiries: one for batch scoring inquiries at scale, and one for generating tailored consultant engagement packages for individual prospects.
 
 ## Setup
 
@@ -35,6 +14,75 @@ Create a `.env` file in the project root:
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
+---
+
+## Tool 1: Bio Tailoring CLI (`tailor_bio.py`)
+
+Researches a prospect company via web search, tailors a consultant bio, and generates a full pre-engagement package — all from two inputs.
+
+### What It Does
+
+1. **Researches** the prospect company using Claude with web search (culture, structure, AI posture, industry context)
+2. **Generates** a tailored consultant bio reframed for the prospect's inquiry and values
+3. **Produces** 5 outputs as a complete engagement prep package
+
+### Inputs
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--company`, `-c` | Yes | Name of the prospect company |
+| `--inquiry`, `-q` | Yes | Inquiry description text, or path to a `.txt`/`.md` file |
+| `--bio`, `-b` | No | Path to original bio `.docx` (default: `2026 Sklarew Bio - IIA.docx`) |
+| `--company-profile`, `-p` | No | Path to Synaptiq profile `.md` (default: `synaptiq-company-profile.md`) |
+| `--output-dir`, `-o` | No | Output directory (default: `output/<company-slug>/`) |
+| `--model`, `-m` | No | Claude model for content generation (default: `claude-sonnet-4-20250514`) |
+| `--research-model` | No | Claude model for web research (default: `claude-sonnet-4-20250514`) |
+| `--verbose`, `-v` | No | Verbose logging |
+
+### Outputs
+
+Each run creates 5 files in the output directory:
+
+| # | File | Format | Description |
+|---|------|--------|-------------|
+| 1 | `Sklarew Bio - <Company>.docx` | `.docx` | Tailored bio with headshot and logo from original |
+| 2 | `tailoring-specifics-<slug>_<ts>.md` | `.md` | What was tailored and why — emphasis shifts, language alignment, de-emphasized elements |
+| 3 | `company-profile-<slug>_<ts>.md` | `.md` | Company research profile — overview, culture, workforce, AI posture, industry context |
+| 4 | `discovery-questions-<slug>_<ts>.md` | `.md` | 3-5 recommended questions for the initial consult with rationale |
+| 5 | `prep-brief-<slug>_<ts>.md` | `.md` | Internal consultant prep brief — TL;DR, talking points, landmines, meeting flow, success criteria |
+
+### Usage
+
+```bash
+# Basic usage — just company name and inquiry text
+python tailor_bio.py -c "Chick-fil-A" -q "Seeking AI workforce planning guidance..."
+
+# Inquiry from a file
+python tailor_bio.py -c "Acme Corp" -q inquiry.txt
+
+# Custom output directory
+python tailor_bio.py -c "Acme Corp" -q "..." -o output/custom-folder
+
+# Verbose logging
+python tailor_bio.py -c "Acme Corp" -q "..." -v
+```
+
+---
+
+## Tool 2: Batch Inquiry Scoring CLI (`analyze.py`)
+
+Batch-scores IIA prospect inquiries for Synaptiq fit using the Claude API. Replaces the manual copy-paste-into-LLM workflow that broke at 523 rows.
+
+### What It Does
+
+1. **Loads** the input CSV and three reference docs (scoring prompt, company profile, IIA comparison)
+2. **Partitions** rows into active, closed, and trivial buckets
+3. **Pre-scores** trivial rows locally (cancelled/empty description) — no API call
+4. **Batch-scores** active rows via Claude with full Fit/Urgency methodology
+5. **Batch-scores** closed rows with Urgency fixed at 1 (lighter pass, larger batches)
+6. **Caches** results in SQLite keyed by Case Number + description hash
+7. **Outputs** a prioritized CSV and a summary markdown
+
 ### Required Files
 
 These must be in the same directory as `analyze.py`:
@@ -43,7 +91,7 @@ These must be in the same directory as `analyze.py`:
 - `synaptiq-company-profile.md` — Synaptiq capabilities, industries, case studies
 - `synaptiq-iia-comparison.md` — Synaptiq vs IIA distinct/overlap capabilities
 
-## Usage
+### Usage
 
 ```bash
 # Dry run — validates CSV parsing and partitioning, no API calls
@@ -52,7 +100,7 @@ python analyze.py --dry-run
 # Score active rows only (fast, cheap)
 python analyze.py --skip-closed
 
-# Full run — all 523 rows
+# Full run — all rows
 python analyze.py
 
 # Custom input file and small batches
@@ -81,32 +129,14 @@ python analyze.py [OPTIONS]
   --verbose, -v         Verbose logging
 ```
 
-## Output
+### Output
 
 Each run creates two files in `output/`:
 
-- **`inquiry_analysis_YYYYMMDD_HHMMSS.csv`** — All rows scored, sorted by Priority descending
-- **`inquiry_analysis_YYYYMMDD_HHMMSS_summary.md`** — Auto-generated report sections:
-  - Top Opportunities (Priority >= 16)
-  - Quick Wins (Urgency = 5, Fit >= 3)
-  - Distinct Capability Matches (Fit >= 4) with capability frequency
-  - IIA Referral Candidates (Fit <= 2)
+- **`inquiry_analysis_<ts>.csv`** — All rows scored, sorted by Priority descending
+- **`inquiry_analysis_<ts>_summary.md`** — Top Opportunities, Quick Wins, Distinct Capability Matches, IIA Referral Candidates
 
-### CSV Columns
-
-| Column | Description |
-|--------|-------------|
-| Case Number | From input CSV |
-| Status | From input CSV |
-| Age (Days) | From input CSV |
-| Description | From input CSV |
-| Summary | 1-2 sentence AI-generated summary |
-| Distinct Capabilities Matched | Synaptiq capabilities that apply |
-| Fit | 1-5, weighted toward Synaptiq distinct capabilities |
-| Urgency | 1-5, based on status and age |
-| Priority | Fit x Urgency (max 25) |
-
-## Caching
+### Caching
 
 Results are cached in `cache.db` (SQLite) keyed by Case Number + SHA-256 hash of the Description field. On re-run:
 
@@ -114,10 +144,10 @@ Results are cached in `cache.db` (SQLite) keyed by Case Number + SHA-256 hash of
 - **Changed description** → re-scored via API
 - **`--force-rescore`** → ignores cache entirely
 
-## Scoring Methodology
+### Scoring Methodology
 
 See `prospect-analysis-prompt-weighted.md` for the full rubric. In summary:
 
-- **Fit (1-5)**: Weighted toward Synaptiq's *distinct* capabilities (Machine Vision, ML Model Dev, LLM Implementation, DataLake, AI Agents, OCR, RPA, etc.) vs overlap capabilities shared with IIA (strategy, assessments, governance)
-- **Urgency (1-5)**: Based on inquiry status (New/Scoping/Pending Expert = 5, Closed = 1) adjusted by age
-- **Priority**: Fit x Urgency, max 25
+- **Fit (1-5)**: Weighted toward Synaptiq's *distinct* capabilities (Machine Vision, ML Model Dev, LLM Implementation, DataLake, AI Agents, OCR, RPA, etc.)
+- **Urgency (1-5)**: Based on inquiry status and age
+- **Priority**: Fit × Urgency, max 25
