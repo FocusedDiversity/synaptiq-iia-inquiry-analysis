@@ -1,6 +1,6 @@
 # Synaptiq IIA Inquiry Analysis Tools
 
-Three CLI tools for processing IIA prospect inquiries: batch scoring inquiries at scale, generating tailored consultant engagement packages, and creating base bio documents from raw content.
+Four CLI tools for processing IIA prospect inquiries: assessing inquiry matchability for expert matching, batch scoring inquiries at scale, generating tailored consultant engagement packages, and creating base bio documents from raw content.
 
 ## Setup
 
@@ -16,7 +16,78 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ---
 
-## Tool 1: Bio Tailoring CLI (`tailor_bio.py`)
+## Tool 1: Inquiry Matchability Analyzer (`inquiry_analyzer.py`)
+
+Assesses how ready IIA member inquiries are to be matched to the right expert for a free 1-hour consultation. Identifies information gaps and generates specific follow-up questions to ask before matching.
+
+### What It Does
+
+For each inquiry, uses Claude to:
+
+1. **Score matchability** (1-5) — how ready the inquiry is to be matched
+2. **Classify** — domain cluster, depth/stage, and consultation value type
+3. **Identify gaps** — which of 6 key information dimensions are missing
+4. **Generate follow-up questions** — specific to the inquiry, for low-scoring entries
+
+### Modes
+
+**Single mode** — analyze one inquiry and print results to terminal:
+
+```bash
+# Description only
+python inquiry_analyzer.py --description "We are exploring how to build a RAG pipeline..."
+
+# With subject
+python inquiry_analyzer.py --subject "RAG Support" --description "We are exploring..."
+```
+
+**Batch mode** — analyze a CSV and produce enriched outputs:
+
+```bash
+python inquiry_analyzer.py -i inquiry_export.csv
+python inquiry_analyzer.py -i inquiry_export.csv -b 20 -o output/matchability -v
+```
+
+### Analysis Dimensions
+
+| Dimension | Values |
+|-----------|--------|
+| **Matchability Score** | 1 (unmatchable) to 5 (match-ready) |
+| **Domain Tags** | `analytics_bi`, `genai_llm_agentic`, `ml_data_science`, `leadership_coaching`, `operating_model_org_design`, `data_governance`, `cloud_infrastructure`, `ai_ml_strategy`, `data_strategy_architecture`, `talent_workforce` |
+| **Depth/Stage** | `exploring`, `planning`, `executing`, `stuck`, `validating`, `unknown` |
+| **Value Type** | `frameworks`, `advice`, `examples`, `peer_exchange`, `validation`, `presentation`, `unknown` |
+| **Missing Info** | `depth_stage`, `industry`, `org_context`, `team_context`, `role_level`, `consultation_value_type` |
+
+### All Options
+
+```
+python inquiry_analyzer.py [OPTIONS]
+  -i, --input           Input CSV path (batch mode)
+  --subject             Single inquiry subject (optional)
+  --description         Single inquiry description (single mode)
+  -o, --output-dir      Output directory (default: output/)
+  -b, --batch-size      Batch size for CSV processing (default: 10)
+  -m, --model           Claude model (default: claude-sonnet-4-20250514)
+  --force-rescore       Ignore cache, rescore everything
+  --cache-file          SQLite cache path (default: inquiry_analyzer_cache.db)
+  --dry-run             Preview without API calls
+  -v, --verbose         Verbose logging
+```
+
+### Outputs (Batch Mode)
+
+| # | File | Description |
+|---|------|-------------|
+| 1 | `inquiry_matchability_<ts>.csv` | Enriched CSV with all original columns plus analysis columns, sorted by matchability score (worst first) |
+| 2 | `inquiry_matchability_<ts>_summary.md` | Summary report — score distribution, gap frequency, domain breakdown, and critical follow-ups needed |
+
+### Caching
+
+Results are cached in `inquiry_analyzer_cache.db` (SQLite) keyed by SHA-256 hash of subject + description. On re-run, identical inquiries are served from cache without an API call. Use `--force-rescore` to bypass.
+
+---
+
+## Tool 2: Bio Tailoring CLI (`tailor_bio.py`)
 
 Researches a prospect company via web search, tailors a consultant bio, and generates a full pre-engagement package — all from two inputs.
 
@@ -84,7 +155,7 @@ python tailor_bio.py -c "Acme Corp" -q "..." -v
 
 ---
 
-## Tool 2: Base Bio Generator (`generate_tailored_bio.py`)
+## Tool 3: Base Bio Generator (`generate_tailored_bio.py`)
 
 Standalone script that builds a formatted `.docx` bio document from scratch using `python-docx`. Unlike `tailor_bio.py` which tailors an existing bio for a specific prospect, this script generates a complete bio document with custom layout, headshot, logo, and structured content sections.
 
@@ -110,7 +181,7 @@ Images are expected at `/tmp/bio_images/word/media/` (extracted from a source `.
 
 ---
 
-## Tool 3: Batch Inquiry Scoring CLI (`analyze.py`)
+## Tool 4: Batch Inquiry Scoring CLI (`analyze.py`)
 
 Batch-scores IIA prospect inquiries for Synaptiq fit using the Claude API. Replaces the manual copy-paste-into-LLM workflow that broke at 523 rows.
 
