@@ -62,6 +62,20 @@ def extract_bio_text(docx_path: Path) -> str:
         return "\n\n".join(paragraphs)
 
 
+def derive_consultant_name(docx_path: Path) -> str:
+    """Derive the consultant's last name from the bio filename (e.g. '2026 Sklarew Bio - IIA.docx' -> 'Sklarew')."""
+    stem = docx_path.stem  # e.g. "2026 Sklarew Bio - IIA"
+    # Try pattern: "<year> <LastName> Bio ..."
+    m = re.match(r"\d{4}\s+(\w+)\s+Bio", stem)
+    if m:
+        return m.group(1)
+    # Fallback: second word in filename
+    parts = stem.split()
+    if len(parts) >= 2:
+        return parts[1]
+    return "Consultant"
+
+
 def extract_bio_images(docx_path: Path, tmp_dir: Path) -> dict[str, Path]:
     """Extract images from a .docx and return a dict of name -> path."""
     images = {}
@@ -618,6 +632,11 @@ Examples:
         help=f"Claude model for web research (default: {RESEARCH_MODEL})",
     )
     p.add_argument(
+        "-r", "--company-research",
+        default=None,
+        help="Path to an existing company research profile .md (skips web research step)",
+    )
+    p.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Verbose logging",
@@ -684,10 +703,25 @@ def main():
         # --- Load Synaptiq profile ---
         synaptiq_profile = profile_path.read_text(encoding="utf-8")
 
-        # --- Step 1: Research the company ---
-        company_profile_md = research_company(
-            client, company, inquiry, args.research_model
-        )
+        # --- Step 1: Research the company (use cache if available) ---
+        cached_research = None
+        if args.company_research:
+            cr_path = Path(args.company_research)
+            if cr_path.is_file():
+                cached_research = cr_path
+        else:
+            # Auto-detect cached research in output directory
+            existing = sorted(out_dir.glob(f"company-profile-{slug}_*.md"))
+            if existing:
+                cached_research = existing[-1]  # most recent
+
+        if cached_research:
+            LOG.info("Using cached company research: %s", cached_research)
+            company_profile_md = cached_research.read_text(encoding="utf-8")
+        else:
+            company_profile_md = research_company(
+                client, company, inquiry, args.research_model
+            )
 
         # --- Step 2: Generate tailored content ---
         bio_data = generate_tailored_bio(
@@ -704,9 +738,10 @@ def main():
 
         # --- Step 4: Write all outputs ---
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        consultant_name = derive_consultant_name(bio_path)
 
         # 1. Tailored bio .docx
-        docx_path = out_dir / f"Sklarew Bio - {company}.docx"
+        docx_path = out_dir / f"{consultant_name} Bio - {company}.docx"
         build_docx(bio_data, images, docx_path)
 
         # 2. Tailoring specifics .md
