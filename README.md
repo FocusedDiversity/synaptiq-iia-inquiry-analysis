@@ -1,6 +1,6 @@
 # Synaptiq IIA Inquiry Analysis Tools
 
-Two CLI tools for processing IIA prospect inquiries: one for batch scoring inquiries at scale, and one for generating tailored consultant engagement packages for individual prospects.
+Three CLI tools for processing IIA prospect inquiries: batch scoring inquiries at scale, generating tailored consultant engagement packages, and creating base bio documents from raw content.
 
 ## Setup
 
@@ -34,6 +34,7 @@ Researches a prospect company via web search, tailors a consultant bio, and gene
 | `--inquiry`, `-q` | Yes | Inquiry description text, or path to a `.txt`/`.md` file |
 | `--bio`, `-b` | No | Path to original bio `.docx` (default: `2026 Sklarew Bio - IIA.docx`) |
 | `--company-profile`, `-p` | No | Path to Synaptiq profile `.md` (default: `synaptiq-company-profile.md`) |
+| `--company-research`, `-r` | No | Path to existing company research `.md` (skips web research step) |
 | `--output-dir`, `-o` | No | Output directory (default: `output/<company-slug>/`) |
 | `--model`, `-m` | No | Claude model for content generation (default: `claude-sonnet-4-20250514`) |
 | `--research-model` | No | Claude model for web research (default: `claude-sonnet-4-20250514`) |
@@ -45,11 +46,19 @@ Each run creates 5 files in the output directory:
 
 | # | File | Format | Description |
 |---|------|--------|-------------|
-| 1 | `Sklarew Bio - <Company>.docx` | `.docx` | Tailored bio with headshot and logo from original |
+| 1 | `<Consultant> Bio - <Company>.docx` | `.docx` | Tailored bio with headshot and logo from original |
 | 2 | `tailoring-specifics-<slug>_<ts>.md` | `.md` | What was tailored and why — emphasis shifts, language alignment, de-emphasized elements |
 | 3 | `company-profile-<slug>_<ts>.md` | `.md` | Company research profile — overview, culture, workforce, AI posture, industry context |
 | 4 | `discovery-questions-<slug>_<ts>.md` | `.md` | 3-5 recommended questions for the initial consult with rationale |
 | 5 | `prep-brief-<slug>_<ts>.md` | `.md` | Internal consultant prep brief — TL;DR, talking points, landmines, meeting flow, success criteria |
+
+### Research Caching
+
+Company research is automatically cached. On subsequent runs targeting the same output directory, the tool detects existing `company-profile-*.md` files and reuses the most recent one instead of running a new web search. You can also provide a specific research file:
+
+```bash
+python tailor_bio.py -c "Acme Corp" -q "..." -r output/acme/company-profile-acme_20260401_120000.md
+```
 
 ### Usage
 
@@ -57,11 +66,17 @@ Each run creates 5 files in the output directory:
 # Basic usage — just company name and inquiry text
 python tailor_bio.py -c "Acme Corp" -q "Seeking AI workforce planning guidance..."
 
+# Use a different consultant's bio
+python tailor_bio.py -c "Acme Corp" -q "..." -b "2026 Oates Bio - IIA.docx"
+
 # Inquiry from a file
 python tailor_bio.py -c "Acme Corp" -q inquiry.txt
 
 # Custom output directory
 python tailor_bio.py -c "Acme Corp" -q "..." -o output/custom-folder
+
+# Reuse existing company research (skip web search)
+python tailor_bio.py -c "Acme Corp" -q "..." -r path/to/company-profile.md
 
 # Verbose logging
 python tailor_bio.py -c "Acme Corp" -q "..." -v
@@ -69,7 +84,33 @@ python tailor_bio.py -c "Acme Corp" -q "..." -v
 
 ---
 
-## Tool 2: Batch Inquiry Scoring CLI (`analyze.py`)
+## Tool 2: Base Bio Generator (`generate_tailored_bio.py`)
+
+Standalone script that builds a formatted `.docx` bio document from scratch using `python-docx`. Unlike `tailor_bio.py` which tailors an existing bio for a specific prospect, this script generates a complete bio document with custom layout, headshot, logo, and structured content sections.
+
+### What It Does
+
+Builds a polished Word document with:
+
+1. **Company logo** (centered header)
+2. **Headshot + name/title block** (side-by-side table layout)
+3. **Overview** section (succinct bio paragraph)
+4. **Background & Expertise** (multi-paragraph extended bio)
+5. **Relevant Experience** (bulleted highlights with bold titles)
+
+### Usage
+
+This is a template script — edit the content variables directly in the file for each new bio, then run:
+
+```bash
+python generate_tailored_bio.py
+```
+
+Images are expected at `/tmp/bio_images/word/media/` (extracted from a source `.docx` via zipfile). The output path is configured at the bottom of the script.
+
+---
+
+## Tool 3: Batch Inquiry Scoring CLI (`analyze.py`)
 
 Batch-scores IIA prospect inquiries for Synaptiq fit using the Claude API. Replaces the manual copy-paste-into-LLM workflow that broke at 523 rows.
 
